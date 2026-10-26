@@ -19,11 +19,13 @@
 | 入口 | 前缀 | 端 | 说明 |
 | --- | --- | --- | --- |
 | 管理端 | `/admin/oa/*` | Vue3 后台 | 模板配置、报表、公告发布、文档管理（控制器注解 `#[Auth]` + `#[Permission("oa:...")]`，走 MineAdmin JWT + RBAC） |
-| 移动端 | `/api/oa/*` | H5 + 小程序 | 审批、打卡、公告阅读、消息、文档只读（走 mobile scene JWT 专用中间件） |
+| 移动端 | `/api/v1/oa/*` | H5 + 小程序 | 审批、打卡、公告阅读、消息、文档只读（走 mobile JWT 场景专用中间件；V1 版本前缀已从 3.2 源码确认） |
 | 移动端鉴权 | `/api/auth/*` | H5 + 小程序 | 登录、绑定、短信验证码 |
 
-> 双端共用业务 Service 层，仅 Controller/鉴权方式不同（`App\OA\Http\Controller\Admin` 与 `...\Api`，见 D2 §2）。
-> 错误码规范：`1000 + 模块号*100 + 序号`（如审批 1100xx）。
+> 双端共用业务 Service 层（`App\Service\OA\...`），仅 Controller/鉴权方式不同（`App\Http\Admin\Controller\OA` 与 `App\Http\Api\Controller\OA`，见 D2 §2）。
+> 错误码规范：`1000 + 模块号*100 + 序号`（如审批 1100xx）。实现方式（已从 3.2 源码确认）：
+> 官方 `ResultCode` 枚举为 HTTP 语义码（200/401/403/422/500），OA 业务错误码以同风格
+> 枚举（OaResultCode 或 ResultCode 的 OA 段）定义，经 `App\BusinessException` 抛出、`Result` 输出。
 
 ---
 
@@ -69,19 +71,19 @@
 
 | 接口 | 方法 | 说明 |
 | --- | --- | --- |
-| /api/oa/approval/templates | GET | 可发起的模板列表（name+icon+bizType），缓存 5min |
-| /api/oa/approval/template/{id} | GET | 模板详情（formSchema，双端动态渲染表单） |
-| /api/oa/approval/submit | POST | 发起：`{ templateId, title, formData: {field:value}, billData: {...}, ccUserIds?:[] }`——`billData` 为业务单据数据（请假模板必传假别/起止时间等，结构见 D3 §2），同事务创建单据 + 实例 |
-| /api/oa/approval/list | GET | 我的申请：`status`、`page`、`pageSize` |
-| /api/oa/approval/todos | GET | 待我审批（status=0 任务） |
-| /api/oa/approval/dones | GET | 我已审批 |
-| /api/oa/approval/ccs | GET | 抄送我的 |
-| /api/oa/approval/detail/{instanceId} | GET | 实例详情：单据数据 + 表单数据 + 节点/任务状态（按 form_snapshot 渲染）+ 留痕时间线（含轮次） |
-| /api/oa/approval/act | POST | **审批操作（核心）**，见下 |
-| /api/oa/approval/cancel/{instanceId} | POST | 撤回（仅 DRAFT、或**首个节点未处理前**，与 D1/D2 统一） |
-| /api/oa/approval/resubmit/{instanceId} | POST | 被驳回至发起人后重新编辑提交：`{ formData, billData, title? }`；实例 `round` +1，旧未处理任务作废，已处理记录全保留 |
+| /api/v1/oa/approval/templates | GET | 可发起的模板列表（name+icon+bizType），缓存 5min |
+| /api/v1/oa/approval/template/{id} | GET | 模板详情（formSchema，双端动态渲染表单） |
+| /api/v1/oa/approval/submit | POST | 发起：`{ templateId, title, formData: {field:value}, billData: {...}, ccUserIds?:[] }`——`billData` 为业务单据数据（请假模板必传假别/起止时间等，结构见 D3 §2），同事务创建单据 + 实例 |
+| /api/v1/oa/approval/list | GET | 我的申请：`status`、`page`、`pageSize` |
+| /api/v1/oa/approval/todos | GET | 待我审批（status=0 任务） |
+| /api/v1/oa/approval/dones | GET | 我已审批 |
+| /api/v1/oa/approval/ccs | GET | 抄送我的 |
+| /api/v1/oa/approval/detail/{instanceId} | GET | 实例详情：单据数据 + 表单数据 + 节点/任务状态（按 form_snapshot 渲染）+ 留痕时间线（含轮次） |
+| /api/v1/oa/approval/act | POST | **审批操作（核心）**，见下 |
+| /api/v1/oa/approval/cancel/{instanceId} | POST | 撤回（仅 DRAFT、或**首个节点未处理前**，与 D1/D2 统一） |
+| /api/v1/oa/approval/resubmit/{instanceId} | POST | 被驳回至发起人后重新编辑提交：`{ formData, billData, title? }`；实例 `round` +1，旧未处理任务作废，已处理记录全保留 |
 
-### POST /api/oa/approval/act — 审批操作契约
+### POST /api/v1/oa/approval/act — 审批操作契约
 
 ```jsonc
 // 入参
@@ -115,14 +117,14 @@
 
 | 接口 | 方法 | 端 | 说明 |
 | --- | --- | --- | --- |
-| /api/oa/attendance/punch | POST | 双端 | `{ "type": 1 }`；服务端校验 IP 段/时间窗；**同步事务写库**，提交成功才返回 |
-| /api/oa/attendance/calendar | GET | 双端 | 个人考勤日历：`month=2026-10` → 逐日 `{status, lateMinutes, ...}`；口径分"历史已结算 / 当日暂计 / 未来未发生" |
-| /api/oa/attendance/correct/submit | POST | 双端 | 发起补卡（内部创建补卡审批实例；通过后 Outbox 事件触发当日重算） |
+| /api/v1/oa/attendance/punch | POST | 双端 | `{ "type": 1 }`；服务端校验 IP 段/时间窗；**同步事务写库**，提交成功才返回 |
+| /api/v1/oa/attendance/calendar | GET | 双端 | 个人考勤日历：`month=2026-10` → 逐日 `{status, lateMinutes, ...}`；口径分"历史已结算 / 当日暂计 / 未来未发生" |
+| /api/v1/oa/attendance/correct/submit | POST | 双端 | 发起补卡（内部创建补卡审批实例；通过后 Outbox 事件触发当日重算） |
 | /admin/oa/attendance/rule/save | POST | 管理端 | 考勤规则配置（含 `effectiveDate` 生效日期；新规则不回算历史） |
 | /admin/oa/attendance/report/monthly | GET | 管理端 | 月度报表：`month`、`deptId?` → 出勤/迟到/缺卡/请假统计；挂 `#[DataScope]`（deptColumn/dept 过滤，见 D2 §6.4） |
 | /admin/oa/attendance/report/export | POST | 管理端 | 异步导出 Excel，出参 `{ "taskId": "..." }`，完成后站内信通知下载 |
 
-**POST /api/oa/attendance/punch 响应（同步语义修订）**：
+**POST /api/v1/oa/attendance/punch 响应（同步语义修订）**：
 
 ```jsonc
 // 成功：打卡记录已落库
@@ -145,11 +147,11 @@
 | /admin/oa/announcement/publish/{id} | PUT | 管理端 | 发布（publishAt 未来时间则进定时任务） |
 | /admin/oa/announcement/read-stats/{id} | GET | 管理端 | 已读/未读人员列表（按部门分组） |
 | /admin/oa/announcement/urge/{id} | POST | 管理端 | 一键催办：向未读人员发站内消息 |
-| /api/oa/announcement/list | GET | 双端 | 移动端公告列表（置顶优先） |
-| /api/oa/announcement/detail/{id} | GET | 双端 | 阅读详情（**服务端同时写入已读记录，幂等**；返回过滤后内容） |
-| /api/oa/message/list | GET | 双端 | 消息盒子：`bizType?`、分页 |
-| /api/oa/message/read | POST | 双端 | `{ "ids": [1,2] }` 或 `all=true` 批量已读 |
-| /api/oa/message/unread-count | GET | 双端 | 未读数（角标，Redis 计数） |
+| /api/v1/oa/announcement/list | GET | 双端 | 移动端公告列表（置顶优先） |
+| /api/v1/oa/announcement/detail/{id} | GET | 双端 | 阅读详情（**服务端同时写入已读记录，幂等**；返回过滤后内容） |
+| /api/v1/oa/message/list | GET | 双端 | 消息盒子：`bizType?`、分页 |
+| /api/v1/oa/message/read | POST | 双端 | `{ "ids": [1,2] }` 或 `all=true` 批量已读 |
+| /api/v1/oa/message/unread-count | GET | 双端 | 未读数（角标，Redis 计数） |
 
 > H5 提醒通道为站内消息 + 角标（Web Push 已移除：微信内置浏览器与国内浏览器环境不可用，D1 §2.5）。
 
@@ -165,10 +167,10 @@
 | /admin/oa/doc/file/list | GET | 管理端 | `folderId`、`name?` 分页 |
 | /admin/oa/doc/file/preview/{id} | GET | 管理端 | 返回 PDF 预览地址（无缓存则入队列转换后通知） |
 | /admin/oa/doc/file/download/{id} | GET | 管理端 | 下载链接（校验目录 view 权限） |
-| /api/oa/doc/folder/tree | GET | H5 | **只读目录树**（权限过滤） |
-| /api/oa/doc/file/list | GET | H5 | **只读文件列表**：`folderId`、`name?` 分页 |
-| /api/oa/doc/file/download/{id} | GET | H5 | **只读下载**（校验 view 权限） |
-| /api/oa/doc/file/preview/{id} | GET | H5 | **只读预览**（返回 PDF 地址；无权限或未转换返回可读错误） |
+| /api/v1/oa/doc/folder/tree | GET | H5 | **只读目录树**（权限过滤） |
+| /api/v1/oa/doc/file/list | GET | H5 | **只读文件列表**：`folderId`、`name?` 分页 |
+| /api/v1/oa/doc/file/download/{id} | GET | H5 | **只读下载**（校验 view 权限） |
+| /api/v1/oa/doc/file/preview/{id} | GET | H5 | **只读预览**（返回 PDF 地址；无权限或未转换返回可读错误） |
 
 错误码：130001 无目录权限；130002 文件类型不允许；130003 超大小限制。
 

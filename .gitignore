@@ -1,0 +1,25 @@
+# ===== WorkBuddy 本地助手数据（勿入库）=====
+.workbuddy/
+
+# ===== 依赖与构建产物（各子目录 .gitignore 的兜底）=====
+**/node_modules/
+**/dist/
+**/build/
+.pnpm-store/
+
+# ===== IDE / 编辑器 / 系统 =====
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# ===== 环境与密钥（禁止入库，仅保留 example）=====
+**/.env
+!**/.env.example
+*.key
+
+# ===== 日志与临时文件 =====
+*.log
+*.cache
+runtime/
